@@ -1,15 +1,14 @@
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
+
 import mysql.connector
 from mysql.connector import Error
 
-#untuk koneksi ke database
-DB_CONFIG = {
-    "host": "localhost",
-    "user": "root",
-    "password": "",
-    "database": "db_multimedia"
-}
 
-#jika ada eror atau gagal terhubung ke database
+DB_CONFIG = {"host": "localhost", "user": "root", "password": "", "database": "db_multimedia"}
+STATUS_TRANSAKSI = ("Berhasil", "Pending", "Gagal")
+
+
 def get_connection():
     try:
         return mysql.connector.connect(**DB_CONFIG)
@@ -22,13 +21,62 @@ def pause():
     input("\nTekan ENTER untuk kembali...")
 
 
-def input_int(prompt):
+def input_int(prompt, minimum=1):
+    while True:
+        try:
+            value = int(input(prompt).strip())
+            if minimum is not None and value < minimum:
+                raise ValueError
+            return value
+        except ValueError:
+            print(f"Input harus berupa bilangan bulat minimal {minimum}.")
+
+
+def input_required(prompt):
     while True:
         value = input(prompt).strip()
+        if value:
+            return value
+        print("Field ini wajib diisi.")
+
+
+def input_date(prompt, optional=False):
+    while True:
+        value = input(prompt).strip()
+        if optional and not value:
+            return None
         try:
-            return int(value)
+            return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
         except ValueError:
-            print("Input harus berupa angka.")
+            print("Tanggal harus berformat YYYY-MM-DD dan valid.")
+
+
+def input_time(prompt):
+    while True:
+        try:
+            return datetime.strptime(input(prompt).strip(), "%H:%M:%S").time().isoformat()
+        except ValueError:
+            print("Waktu harus berformat HH:MM:SS dan valid.")
+
+
+def input_money(prompt, minimum=Decimal("0")):
+    while True:
+        try:
+            value = Decimal(input(prompt).strip().replace(",", ""))
+            if not value.is_finite() or value < minimum:
+                raise InvalidOperation
+            return value
+        except InvalidOperation:
+            print(f"Nominal harus berupa angka valid minimal Rp {minimum:,.0f}.")
+
+
+def input_status(prompt):
+    valid_status = {status.lower(): status for status in STATUS_TRANSAKSI}
+    while True:
+        status = valid_status.get(input(prompt).strip().lower())
+        if status:
+            return status
+        print("Status transaksi harus Berhasil, Pending, atau Gagal.")
 
 
 def confirm_delete():
@@ -45,654 +93,250 @@ def print_title(title):
     print("=" * 70)
 
 
-#Tim_Multimedia
-def create_tim():
-    print_title("TAMBAH DATA TIM MULTIMEDIA")
-    id_tim = input_int("ID TIM              : ")
-    nama = input("Nama                 : ").strip()
-    divisi = input("Divisi               : ").strip()
-    if not nama or not divisi:
-        print("Nama dan divisi wajib diisi.")
-        return
+def run_write(query, params, success, not_found, error):
     conn = get_connection()
-    if conn is None: return
+    if conn is None:
+        return
     cursor = conn.cursor()
     try:
-        cursor.execute("INSERT INTO Tim_Multimedia (id_tim, nama, divisi) VALUES (%s,%s,%s)",
-                       (id_tim, nama, divisi))
+        cursor.execute(query, params)
         conn.commit()
-        print("\nDATA TIM MULTIMEDIA BERHASIL DITAMBAHKAN!")
+        print(success if cursor.rowcount else not_found)
     except Error as err:
-        conn.rollback(); print(f"GAGAL MENAMBAHKAN DATA: {err}")
+        conn.rollback()
+        print(f"{error}: {err}")
     finally:
-        cursor.close(); conn.close()
+        cursor.close()
+        conn.close()
+
+
+def create_tim():
+    print_title("TAMBAH DATA TIM MULTIMEDIA")
+    run_write(
+        "INSERT INTO Tim_Multimedia (id_tim, nama, divisi) VALUES (%s, %s, %s)",
+        (input_int("ID TIM              : "), input_required("Nama                : "), input_required("Divisi              : ")),
+        "\nDATA TIM MULTIMEDIA BERHASIL DITAMBAHKAN!", "", "GAGAL MENAMBAHKAN DATA",
+    )
 
 
 def read_tim():
     print_title("DAFTAR TIM MULTIMEDIA")
     conn = get_connection()
-    if conn is None: return
+    if conn is None:
+        return
     cursor = conn.cursor()
     try:
         cursor.execute("SELECT id_tim, nama, divisi FROM Tim_Multimedia ORDER BY id_tim")
         rows = cursor.fetchall()
         if not rows:
-            print("BELUM ADA DATA TIM MULTIMEDIA."); return
-        print(f"{'ID':<6}{'NAMA':<25}{'DIVISI':<25}")
-        print("-" * 54)
-        for r in rows: print(f"{r[0]:<6}{r[1]:<25}{r[2]:<25}")
-    except Error as err: print(f"GAGAL MENAMPILKAN DATA: {err}")
-    finally: cursor.close(); conn.close()
+            print("BELUM ADA DATA TIM MULTIMEDIA.")
+            return
+        print(f"{'ID':<6}{'NAMA':<25}{'DIVISI':<25}\n" + "-" * 54)
+        for row in rows:
+            print(f"{row[0]:<6}{row[1]:<25}{row[2]:<25}")
+    except Error as err:
+        print(f"GAGAL MENAMPILKAN DATA: {err}")
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def update_tim():
     print_title("UBAH DATA TIM MULTIMEDIA")
-    id_tim = input_int("ID TIM yang diubah : ")
-    nama = input("Nama baru           : ").strip()
-    divisi = input("Divisi baru         : ").strip()
-    if not nama or not divisi:
-        print("Nama dan divisi wajib diisi."); return
-    conn = get_connection()
-    if conn is None: return
-    cursor = conn.cursor()
-    try:
-        cursor.execute("UPDATE Tim_Multimedia SET nama=%s, divisi=%s WHERE id_tim=%s",
-                       (nama, divisi, id_tim))
-        conn.commit()
-        print("\nDATA TIM MULTIMEDIA BERHASIL DIUBAH!" if cursor.rowcount else "\nID TIM TIDAK DITEMUKAN.")
-    except Error as err:
-        conn.rollback(); print(f"GAGAL MENGUBAH DATA: {err}")
-    finally: cursor.close(); conn.close()
+    id_tim = input_int("ID TIM yang diubah  : ")
+    run_write(
+        "UPDATE Tim_Multimedia SET nama = %s, divisi = %s WHERE id_tim = %s",
+        (input_required("Nama baru           : "), input_required("Divisi baru         : "), id_tim),
+        "\nDATA TIM MULTIMEDIA BERHASIL DIUBAH!", "\nID TIM TIDAK DITEMUKAN.", "GAGAL MENGUBAH DATA",
+    )
 
 
 def delete_tim():
     print_title("HAPUS DATA TIM MULTIMEDIA")
     id_tim = input_int("ID TIM yang dihapus : ")
-    if not confirm_delete(): print("Penghapusan dibatalkan."); return
-    conn = get_connection()
-    if conn is None: return
-    cursor = conn.cursor()
-    try:
-        cursor.execute("DELETE FROM Tim_Multimedia WHERE id_tim=%s", (id_tim,))
-        conn.commit()
-        print("\nDATA TIM MULTIMEDIA BERHASIL DIHAPUS!" if cursor.rowcount else "\nID TIM TIDAK DITEMUKAN.")
-    except Error as err:
-        conn.rollback(); print(f"GAGAL MENGHAPUS DATA: {err}")
-    finally: cursor.close(); conn.close()
+    if confirm_delete():
+        run_write("DELETE FROM Tim_Multimedia WHERE id_tim = %s", (id_tim,), "\nDATA TIM MULTIMEDIA BERHASIL DIHAPUS!", "\nID TIM TIDAK DITEMUKAN.", "GAGAL MENGHAPUS DATA")
+    else:
+        print("Penghapusan dibatalkan.")
 
 
 def menu_tim():
-    while True:
-        print_title("MENU TIM MULTIMEDIA")
-        print("1. Tambah Data\n2. Tampilkan Data\n3. Ubah Data\n4. Hapus Data\n0. Kembali ke Menu Utama")
-        pilihan = input("Pilih menu: ").strip()
-        if pilihan == "1": create_tim(); pause()
-        elif pilihan == "2": read_tim(); pause()
-        elif pilihan == "3": update_tim(); pause()
-        elif pilihan == "4": delete_tim(); pause()
-        elif pilihan == "0": break
-        else: print("Pilihan tidak valid."); pause()
+    menu_crud("MENU TIM MULTIMEDIA", create_tim, read_tim, update_tim, delete_tim)
 
 
-#PEMESANAN
 def create_pemesanan():
     print_title("TAMBAH DATA PEMESANAN")
     data = (
-        input_int("ID Pemesanan                   : "),
-        input("Nama Pelanggan                 : ").strip(),
-        input("Nama Kegiatan                  : ").strip(),
-        input("Lokasi Kegiatan                : ").strip(),
-        input("Tanggal Pemesanan [YYYY-MM-DD] : ").strip(),
-        input("Waktu Kegiatan [HH:MM:SS]      : ").strip(),
-        input_int("Total Biaya (Rp)               : ")
+        input_int("ID Pemesanan                   : "), input_required("Nama Pelanggan                 : "),
+        input_required("Nama Kegiatan                  : "), input_required("Lokasi Kegiatan                : "),
+        input_date("Tanggal Pemesanan [YYYY-MM-DD] : "), input_time("Waktu Kegiatan [HH:MM:SS]      : "),
+        input_money("Total Biaya (Rp)               : ", Decimal("0.01")),
     )
-    
-    if not all(data[1:6]): 
-        print("Semua field teks wajib diisi.")
-        return
-        
-    if data[6] <= 0:
-        print("Total Biaya tidak boleh negatif atau nol!")
-        return
-
-    conn = get_connection()
-    if conn is None: return
-    cursor = conn.cursor()
-    try:
-        
-        cursor.execute("""INSERT INTO Pemesanan
-            (id_pemesanan, nama_pelanggan, nama_kegiatan, lokasi_kegiatan, tanggal_pemesanan, waktu_kegiatan, total_biaya)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)""", data)
-        conn.commit()
-        print("\nDATA PEMESANAN BERHASIL DITAMBAHKAN!")
-    except Error as err: 
-        conn.rollback()
-        print(f"GAGAL MENAMBAHKAN DATA: {err}")
-    finally: 
-        cursor.close()
-        conn.close()
+    run_write(
+        "INSERT INTO Pemesanan (id_pemesanan, nama_pelanggan, nama_kegiatan, lokasi_kegiatan, tanggal_pemesanan, waktu_kegiatan, total_biaya) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        data, "\nDATA PEMESANAN BERHASIL DITAMBAHKAN!", "", "GAGAL MENAMBAHKAN DATA",
+    )
 
 
 def read_pemesanan():
     print_title("DAFTAR PEMESANAN")
     conn = get_connection()
-    if conn is None: return
+    if conn is None:
+        return
     cursor = conn.cursor()
     try:
-        # 1. Menambahkan total_biaya dan status_pelunasan di akhir query SELECT
         cursor.execute("SELECT id_pemesanan, nama_pelanggan, nama_kegiatan, lokasi_kegiatan, tanggal_pemesanan, waktu_kegiatan, total_biaya, status_pelunasan FROM Pemesanan ORDER BY id_pemesanan")
         rows = cursor.fetchall()
-        
-        if not rows: 
+        if not rows:
             print("BELUM ADA DATA PEMESANAN.")
             return
-            
-        for r in rows:
-            # 2. Menambahkan r[6] dengan format angka dan r[7] ke dalam print
-            print(f"ID Pemesanan     : {r[0]}\n"
-                  f"Nama Pelanggan   : {r[1]}\n"
-                  f"Nama Kegiatan    : {r[2]}\n"
-                  f"Lokasi           : {r[3]}\n"
-                  f"Tanggal Pesan    : {r[4]}\n"
-                  f"Waktu Kegiatan   : {r[5]}\n"
-                  f"Total Biaya      : {r[6]:,.0f}\n"
-                  f"Status Pelunasan : {r[7]}")
+        for row in rows:
+            print(f"ID Pemesanan     : {row[0]}\nNama Pelanggan   : {row[1]}\nNama Kegiatan    : {row[2]}\nLokasi           : {row[3]}\nTanggal Pesan    : {row[4]}\nWaktu Kegiatan   : {row[5]}\nTotal Biaya      : Rp {row[6]:,.0f}\nStatus Pelunasan : {row[7]}")
             print("-" * 70)
-            
-    except Error as err: 
+    except Error as err:
         print(f"GAGAL MENAMPILKAN DATA: {err}")
-    finally: 
+    finally:
         cursor.close()
         conn.close()
 
 
 def update_pemesanan():
     print_title("UBAH DATA PEMESANAN")
-    id_p = input_int("ID Pemesanan yang diubah       : ")
-    
+    id_pemesanan = input_int("ID Pemesanan yang diubah       : ")
     data = (
-        input("Nama Pelanggan baru            : ").strip(),
-        input("Nama Kegiatan baru             : ").strip(),
-        input("Lokasi Kegiatan baru           : ").strip(),
-        input("Tanggal Pemesanan [YYYY-MM-DD] : ").strip(),
-        input("Waktu Kegiatan [HH:MM:SS]      : ").strip(),
-        input_int("Total Biaya baru (Rp)          : "), 
-        id_p 
+        input_required("Nama Pelanggan baru            : "), input_required("Nama Kegiatan baru             : "),
+        input_required("Lokasi Kegiatan baru           : "), input_date("Tanggal Pemesanan [YYYY-MM-DD] : "),
+        input_time("Waktu Kegiatan [HH:MM:SS]      : "), input_money("Total Biaya baru (Rp)          : ", Decimal("0.01")),
+        id_pemesanan,
     )
-    
-    if not all(data[:5]): 
-        print("Semua field teks wajib diisi.")
-        return
-        
-    if data[5] < 0:
-        print("Total Biaya harus lebih besar dari 0 (tidak boleh negatif atau nol).")
-        return
-
-    conn = get_connection()
-    if conn is None: return
-    cursor = conn.cursor()
-    try:
-
-        cursor.execute("""UPDATE Pemesanan 
-            SET nama_pelanggan=%s, nama_kegiatan=%s, lokasi_kegiatan=%s,
-                tanggal_pemesanan=%s, waktu_kegiatan=%s, total_biaya=%s 
-            WHERE id_pemesanan=%s""", data)
-        conn.commit()
-        
-        print("\nDATA PEMESANAN BERHASIL DIUBAH!" if cursor.rowcount else "\nID PEMESANAN TIDAK DITEMUKAN.")
-    except Error as err: 
-        conn.rollback()
-        print(f"GAGAL MENGUBAH DATA: {err}")
-    finally: 
-        cursor.close()
-        conn.close()
+    run_write(
+        "UPDATE Pemesanan SET nama_pelanggan = %s, nama_kegiatan = %s, lokasi_kegiatan = %s, tanggal_pemesanan = %s, waktu_kegiatan = %s, total_biaya = %s WHERE id_pemesanan = %s",
+        data, "\nDATA PEMESANAN BERHASIL DIUBAH!", "\nID PEMESANAN TIDAK DITEMUKAN.", "GAGAL MENGUBAH DATA",
+    )
 
 
 def delete_pemesanan():
     print_title("HAPUS DATA PEMESANAN")
-    id_p = input_int("ID Pemesanan yang dihapus : ")
-    if not confirm_delete(): print("Penghapusan dibatalkan."); return
-    conn = get_connection()
-    if conn is None: return
-    cursor = conn.cursor()
-    try:
-        cursor.execute("DELETE FROM Pemesanan WHERE id_pemesanan=%s", (id_p,))
-        conn.commit(); print("\nDATA PEMESANAN BERHASIL DIHAPUS!" if cursor.rowcount else "\nID PEMESANAN TIDAK DITEMUKAN.")
-    except Error as err: conn.rollback(); print(f"GAGAL MENGHAPUS DATA: {err}")
-    finally: cursor.close(); conn.close()
+    id_pemesanan = input_int("ID Pemesanan yang dihapus : ")
+    if confirm_delete():
+        run_write("DELETE FROM Pemesanan WHERE id_pemesanan = %s", (id_pemesanan,), "\nDATA PEMESANAN BERHASIL DIHAPUS!", "\nID PEMESANAN TIDAK DITEMUKAN.", "GAGAL MENGHAPUS DATA")
+    else:
+        print("Penghapusan dibatalkan.")
 
 
 def menu_pemesanan():
-    while True:
-        print_title("MENU PEMESANAN")
-        print("1. Tambah Data\n2. Tampilkan Data\n3. Ubah Data\n4. Hapus Data\n0. Kembali ke Menu Utama")
-        pilihan = input("Pilih menu: ").strip()
-        if pilihan == "1": create_pemesanan(); pause()
-        elif pilihan == "2": read_pemesanan(); pause()
-        elif pilihan == "3": update_pemesanan(); pause()
-        elif pilihan == "4": delete_pemesanan(); pause()
-        elif pilihan == "0": break
-        else: print("Pilihan tidak valid."); pause()
+    menu_crud("MENU PEMESANAN", create_pemesanan, read_pemesanan, update_pemesanan, delete_pemesanan)
 
 
-#JADWAL
 def create_jadwal():
     print_title("TAMBAH DATA JADWAL")
-    data = (
-        input_int("ID Jadwal           : "),
-        input_int("ID Pemesanan        : "),
-        input_int("ID Tim              : "),
-        input("Waktu Kegiatan [HH:MM:SS] : ").strip()
-    )
-    if not data[3]: print("Waktu kegiatan wajib diisi."); return
-    conn = get_connection()
-    if conn is None: return
-    cursor = conn.cursor()
-    try:
-        cursor.execute("INSERT INTO Jadwal (id_jadwal,id_pemesanan,id_tim,waktu_kegiatan) VALUES (%s,%s,%s,%s)", data)
-        conn.commit(); print("\nDATA JADWAL BERHASIL DITAMBAHKAN!")
-    except Error as err: conn.rollback(); print(f"GAGAL MENAMBAHKAN DATA: {err}")
-    finally: cursor.close(); conn.close()
+    data = (input_int("ID Jadwal                    : "), input_int("ID Pemesanan                 : "), input_int("ID Tim                       : "), input_time("Waktu Kegiatan [HH:MM:SS]    : "))
+    run_write("INSERT INTO Jadwal (id_jadwal, id_pemesanan, id_tim, waktu_kegiatan) VALUES (%s, %s, %s, %s)", data, "\nDATA JADWAL BERHASIL DITAMBAHKAN!", "", "GAGAL MENAMBAHKAN DATA")
 
 
 def read_jadwal():
     print_title("DAFTAR JADWAL")
     conn = get_connection()
-    if conn is None: return
+    if conn is None:
+        return
     cursor = conn.cursor()
     try:
-        cursor.execute("""SELECT j.id_jadwal,j.id_pemesanan,p.nama_pelanggan,p.nama_kegiatan,
-            j.id_tim,t.nama,j.waktu_kegiatan
-            FROM Jadwal j JOIN Pemesanan p ON j.id_pemesanan=p.id_pemesanan
-            JOIN Tim_Multimedia t ON j.id_tim=t.id_tim ORDER BY j.id_jadwal""")
+        cursor.execute("SELECT j.id_jadwal, j.id_pemesanan, p.nama_pelanggan, p.nama_kegiatan, j.id_tim, t.nama, j.waktu_kegiatan FROM Jadwal j JOIN Pemesanan p ON j.id_pemesanan = p.id_pemesanan JOIN Tim_Multimedia t ON j.id_tim = t.id_tim ORDER BY j.id_jadwal")
         rows = cursor.fetchall()
-        if not rows: print("BELUM ADA DATA JADWAL."); return
-        for r in rows:
-            print(f"ID Jadwal       : {r[0]}\nID Pemesanan    : {r[1]}\nNama Pelanggan  : {r[2]}\nNama Kegiatan   : {r[3]}\nID Tim          : {r[4]}\nNama Tim        : {r[5]}\nWaktu Kegiatan  : {r[6]}")
+        if not rows:
+            print("BELUM ADA DATA JADWAL.")
+            return
+        for row in rows:
+            print(f"ID Jadwal       : {row[0]}\nID Pemesanan    : {row[1]}\nNama Pelanggan  : {row[2]}\nNama Kegiatan   : {row[3]}\nID Tim          : {row[4]}\nNama Tim        : {row[5]}\nWaktu Kegiatan  : {row[6]}")
             print("-" * 70)
-    except Error as err: print(f"GAGAL MENAMPILKAN DATA: {err}")
-    finally: cursor.close(); conn.close()
+    except Error as err:
+        print(f"GAGAL MENAMPILKAN DATA: {err}")
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def update_jadwal():
     print_title("UBAH DATA JADWAL")
-    id_j = input_int("ID Jadwal yang diubah : ")
-    data = (input_int("ID Pemesanan baru    : "), input_int("ID Tim baru          : "), input("Waktu Kegiatan [HH:MM:SS] : ").strip(), id_j)
-    if not data[2]: print("Waktu kegiatan wajib diisi."); return
-    conn = get_connection()
-    if conn is None: return
-    cursor = conn.cursor()
-    try:
-        cursor.execute("UPDATE Jadwal SET id_pemesanan=%s,id_tim=%s,waktu_kegiatan=%s WHERE id_jadwal=%s", data)
-        conn.commit(); print("\nDATA JADWAL BERHASIL DIUBAH!" if cursor.rowcount else "\nID JADWAL TIDAK DITEMUKAN.")
-    except Error as err: conn.rollback(); print(f"GAGAL MENGUBAH DATA: {err}")
-    finally: cursor.close(); conn.close()
+    id_jadwal = input_int("ID Jadwal yang diubah         : ")
+    data = (input_int("ID Pemesanan baru             : "), input_int("ID Tim baru                   : "), input_time("Waktu Kegiatan [HH:MM:SS]    : "), id_jadwal)
+    run_write("UPDATE Jadwal SET id_pemesanan = %s, id_tim = %s, waktu_kegiatan = %s WHERE id_jadwal = %s", data, "\nDATA JADWAL BERHASIL DIUBAH!", "\nID JADWAL TIDAK DITEMUKAN.", "GAGAL MENGUBAH DATA")
 
 
 def delete_jadwal():
     print_title("HAPUS DATA JADWAL")
-    id_j = input_int("ID Jadwal yang dihapus : ")
-    if not confirm_delete(): print("Penghapusan dibatalkan."); return
-    conn = get_connection()
-    if conn is None: return
-    cursor = conn.cursor()
-    try:
-        cursor.execute("DELETE FROM Jadwal WHERE id_jadwal=%s", (id_j,)); conn.commit()
-        print("\nDATA JADWAL BERHASIL DIHAPUS!" if cursor.rowcount else "\nID JADWAL TIDAK DITEMUKAN.")
-    except Error as err: conn.rollback(); print(f"GAGAL MENGHAPUS DATA: {err}")
-    finally: cursor.close(); conn.close()
+    id_jadwal = input_int("ID Jadwal yang dihapus : ")
+    if confirm_delete():
+        run_write("DELETE FROM Jadwal WHERE id_jadwal = %s", (id_jadwal,), "\nDATA JADWAL BERHASIL DIHAPUS!", "\nID JADWAL TIDAK DITEMUKAN.", "GAGAL MENGHAPUS DATA")
+    else:
+        print("Penghapusan dibatalkan.")
 
 
 def menu_jadwal():
-    while True:
-        print_title("MENU JADWAL")
-        print("1. Tambah Data\n2. Tampilkan Data\n3. Ubah Data\n4. Hapus Data\n0. Kembali ke Menu Utama")
-        pilihan = input("Pilih menu: ").strip()
-        if pilihan == "1": create_jadwal(); pause()
-        elif pilihan == "2": read_jadwal(); pause()
-        elif pilihan == "3": update_jadwal(); pause()
-        elif pilihan == "4": delete_jadwal(); pause()
-        elif pilihan == "0": break
-        else: print("Pilihan tidak valid."); pause()
+    menu_crud("MENU JADWAL", create_jadwal, read_jadwal, update_jadwal, delete_jadwal)
 
 
-# PEMBAYARAN
 def create_pembayaran():
     print_title("TAMBAH DATA PEMBAYARAN")
-
-    # Input data pembayaran
-    try:
-        data = (
-            input_int("ID Pembayaran      : "),
-            input_int("ID Pemesanan       : "),
-            input("Tanggal Bayar [YYYY-MM-DD] (kosong = NULL): ").strip() or None,
-            float(input("Total Bayar         : ").strip()),
-            input("Status Transaksi   : ").strip()
-        )
-    except ValueError:
-        print("ID harus berupa bilangan bulat dan total bayar harus berupa angka.")
-        return
-
-    # Validasi input
-    if data[0] <= 0 or data[1] <= 0:
-        print("ID Pembayaran dan ID Pemesanan harus lebih besar dari 0.")
-        return
-
-    if data[3] < 0:
-        print("Total bayar tidak boleh negatif.")
-        return
-
-    if not data[4]:
-        print("Status transaksi wajib diisi.")
-        return
-
-    if data[4] not in ("Berhasil", "Pending", "Gagal"):
-        print("Status transaksi harus Berhasil, Pending, atau Gagal.")
-        return
-
-    # Koneksi database
-    conn = get_connection()
-    if conn is None:
-        return
-
-    cursor = conn.cursor()
-
-    try:
-        cursor.execute("""
-            INSERT INTO Pembayaran
-            (id_pembayaran, id_pemesanan, tanggal_bayar, total_bayar, status_transaksi)
-            VALUES (%s, %s, %s, %s, %s)
-        """, data)
-
-        conn.commit()
-        print("\nDATA PEMBAYARAN BERHASIL DITAMBAHKAN!")
-
-    except Error as err:
-        conn.rollback()
-        print(f"GAGAL MENAMBAHKAN DATA: {err}")
-
-    finally:
-        cursor.close()
-        conn.close()
+    data = (input_int("ID Pembayaran                         : "), input_int("ID Pemesanan                          : "), input_date("Tanggal Bayar [YYYY-MM-DD] (kosong = NULL): ", optional=True), input_money("Total Bayar (Rp)                      : "), input_status("Status Transaksi                      : "))
+    run_write("INSERT INTO Pembayaran (id_pembayaran, id_pemesanan, tanggal_bayar, total_bayar, status_transaksi) VALUES (%s, %s, %s, %s, %s)", data, "\nDATA PEMBAYARAN BERHASIL DITAMBAHKAN!", "", "GAGAL MENAMBAHKAN DATA")
 
 
 def read_pembayaran():
     print_title("DAFTAR PEMBAYARAN")
     conn = get_connection()
-    if conn is None: return
+    if conn is None:
+        return
     cursor = conn.cursor()
     try:
-        cursor.execute("""SELECT b.id_pembayaran,b.id_pemesanan,p.nama_pelanggan,p.nama_kegiatan,
-            b.tanggal_bayar,b.total_bayar,b.status_transaksi FROM Pembayaran b
-            JOIN Pemesanan p ON b.id_pemesanan=p.id_pemesanan ORDER BY b.id_pembayaran""")
+        cursor.execute("SELECT b.id_pembayaran, b.id_pemesanan, p.nama_pelanggan, p.nama_kegiatan, b.tanggal_bayar, b.total_bayar, b.status_transaksi FROM Pembayaran b JOIN Pemesanan p ON b.id_pemesanan = p.id_pemesanan ORDER BY b.id_pembayaran")
         rows = cursor.fetchall()
-        if not rows: print("BELUM ADA DATA PEMBAYARAN."); return
-        for r in rows:
-            print(f"ID Pembayaran  : {r[0]}\nID Pemesanan   : {r[1]}\nNama Pelanggan : {r[2]}\nNama Kegiatan  : {r[3]}\nTanggal Bayar  : {r[4]}\nTotal Bayar    : Rp {r[5]:,.2f}\nStatus Transaksi : {r[6]}")
+        if not rows:
+            print("BELUM ADA DATA PEMBAYARAN.")
+            return
+        for row in rows:
+            print(f"ID Pembayaran     : {row[0]}\nID Pemesanan      : {row[1]}\nNama Pelanggan    : {row[2]}\nNama Kegiatan     : {row[3]}\nTanggal Bayar     : {row[4]}\nTotal Bayar       : Rp {row[5]:,.2f}\nStatus Transaksi  : {row[6]}")
             print("-" * 70)
-    except Error as err: print(f"GAGAL MENAMPILKAN DATA: {err}")
-    finally: cursor.close(); conn.close()
-
+    except Error as err:
+        print(f"GAGAL MENAMPILKAN DATA: {err}")
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def update_pembayaran():
     print_title("UBAH DATA PEMBAYARAN")
-
-    id_b = input_int("ID Pembayaran yang diubah : ")
-
-    try:
-        id_pemesanan = input_int("ID Pemesanan baru        : ")
-        tanggal_bayar = input("Tanggal Bayar [YYYY-MM-DD] (kosong = NULL): ").strip() or None
-        total_bayar = float(input("Total Bayar baru         : ").strip())
-        status_transaksi = input("Status Transaksi baru    : ").strip()
-
-        if id_b <= 0 or id_pemesanan <= 0:
-            print("ID harus lebih besar dari 0.")
-            return
-
-        if total_bayar < 0:
-            print("Total bayar tidak boleh negatif.")
-            return
-
-        if status_transaksi not in ("Berhasil", "Pending", "Gagal"):
-            print("Status transaksi harus Berhasil, Pending, atau Gagal.")
-            return
-
-    except ValueError:
-        print("Input ID harus berupa bilangan bulat dan total bayar harus berupa angka.")
-        return
-
-    conn = get_connection()
-    if conn is None:
-        return
-
-    cursor = conn.cursor()
-
-    try:
-        # Ambil ID pemesanan lama sebelum data pembayaran diubah
-        cursor.execute(
-            "SELECT id_pemesanan FROM Pembayaran WHERE id_pembayaran = %s",
-            (id_b,)
-        )
-        hasil = cursor.fetchone()
-
-        if hasil is None:
-            print("ID PEMBAYARAN TIDAK DITEMUKAN.")
-            return
-
-        id_pemesanan_lama = hasil[0]
-
-        # Update data pembayaran
-        cursor.execute("""
-            UPDATE Pembayaran
-            SET id_pemesanan = %s,
-                tanggal_bayar = %s,
-                total_bayar = %s,
-                status_transaksi = %s
-            WHERE id_pembayaran = %s
-        """, (
-            id_pemesanan,
-            tanggal_bayar,
-            total_bayar,
-            status_transaksi,
-            id_b
-        ))
-
-        # Hitung ulang status pelunasan pemesanan lama dan baru
-        for id_p in set((id_pemesanan_lama, id_pemesanan)):
-            cursor.execute("""
-                SELECT
-                    p.total_biaya,
-                    COALESCE(SUM(
-                        CASE
-                            WHEN b.status_transaksi = 'Berhasil'
-                            THEN b.total_bayar
-                            ELSE 0
-                        END
-                    ), 0)
-                FROM Pemesanan p
-                LEFT JOIN Pembayaran b
-                    ON p.id_pemesanan = b.id_pemesanan
-                WHERE p.id_pemesanan = %s
-                GROUP BY p.id_pemesanan, p.total_biaya
-            """, (id_p,))
-
-            hasil_total = cursor.fetchone()
-
-            if hasil_total is not None:
-                total_biaya, total_terbayar = hasil_total
-                status = "Lunas" if total_terbayar >= total_biaya else "Belum Lunas"
-
-                cursor.execute("""
-                    UPDATE Pemesanan
-                    SET status_pelunasan = %s
-                    WHERE id_pemesanan = %s
-                """, (status, id_p))
-
-        conn.commit()
-        print("\nDATA PEMBAYARAN BERHASIL DIUBAH!")
-
-    except Error as err:
-        conn.rollback()
-        print(f"GAGAL MENGUBAH DATA: {err}")
-
-    finally:
-        cursor.close()
-        conn.close()
+    id_pembayaran = input_int("ID Pembayaran yang diubah                : ")
+    data = (input_int("ID Pemesanan baru                         : "), input_date("Tanggal Bayar [YYYY-MM-DD] (kosong = NULL): ", optional=True), input_money("Total Bayar baru (Rp)                     : "), input_status("Status Transaksi baru                     : "), id_pembayaran)
+    run_write("UPDATE Pembayaran SET id_pemesanan = %s, tanggal_bayar = %s, total_bayar = %s, status_transaksi = %s WHERE id_pembayaran = %s", data, "\nDATA PEMBAYARAN BERHASIL DIUBAH!", "\nID PEMBAYARAN TIDAK DITEMUKAN.", "GAGAL MENGUBAH DATA")
 
 
 def delete_pembayaran():
     print_title("HAPUS DATA PEMBAYARAN")
-
-    id_b = input_int("ID Pembayaran yang dihapus : ")
-
-    if not confirm_delete():
+    id_pembayaran = input_int("ID Pembayaran yang dihapus : ")
+    if confirm_delete():
+        run_write("DELETE FROM Pembayaran WHERE id_pembayaran = %s", (id_pembayaran,), "\nDATA PEMBAYARAN BERHASIL DIHAPUS!", "\nID PEMBAYARAN TIDAK DITEMUKAN.", "GAGAL MENGHAPUS DATA")
+    else:
         print("Penghapusan dibatalkan.")
-        return
-
-    conn = get_connection()
-    if conn is None:
-        return
-
-    cursor = conn.cursor()
-
-    try:
-        # Mengambil ID Pemesanan sebelum pembayaran dihapus
-        cursor.execute("""
-            SELECT id_pemesanan
-            FROM Pembayaran
-            WHERE id_pembayaran = %s
-        """, (id_b,))
-
-        result = cursor.fetchone()
-
-        if result is None:
-            print("\nID PEMBAYARAN TIDAK DITEMUKAN.")
-            return
-
-        id_pemesanan = result[0]
-
-        # Menghapus data pembayaran
-        cursor.execute("""
-            DELETE FROM Pembayaran
-            WHERE id_pembayaran = %s
-        """, (id_b,))
-
-        # Menghitung ulang total pembayaran yang berhasil
-        cursor.execute("""
-            SELECT COALESCE(SUM(total_bayar), 0)
-            FROM Pembayaran
-            WHERE id_pemesanan = %s
-              AND status_transaksi = 'Berhasil'
-        """, (id_pemesanan,))
-
-        total_terbayar = cursor.fetchone()[0]
-
-        # Mengambil total biaya pemesanan
-        cursor.execute("""
-            SELECT total_biaya
-            FROM Pemesanan
-            WHERE id_pemesanan = %s
-        """, (id_pemesanan,))
-
-        total_biaya = cursor.fetchone()[0]
-
-        # Memperbarui status pelunasan
-        status = "Lunas" if total_terbayar >= total_biaya else "Belum Lunas"
-
-        cursor.execute("""
-            UPDATE Pemesanan
-            SET status_pelunasan = %s
-            WHERE id_pemesanan = %s
-        """, (status, id_pemesanan))
-
-        conn.commit()
-
-        print("\nDATA PEMBAYARAN BERHASIL DIHAPUS!")
-        print(f"Status Pelunasan Pemesanan: {status}")
-
-    except Error as err:
-        conn.rollback()
-        print(f"GAGAL MENGHAPUS DATA: {err}")
-
-    finally:
-        cursor.close()
-        conn.close()
 
 
 def read_ringkasan_pembayaran():
     print_title("RINGKASAN PEMBAYARAN")
-
     conn = get_connection()
     if conn is None:
         return
-
     cursor = conn.cursor()
-
     try:
-        cursor.execute("""
-            SELECT
-                p.id_pemesanan,
-                p.nama_pelanggan,
-                p.nama_kegiatan,
-                p.total_biaya,
-
-                COALESCE(SUM(
-                    CASE
-                        WHEN b.status_transaksi = 'Berhasil'
-                        THEN b.total_bayar
-                        ELSE 0
-                    END
-                ), 0) AS total_terbayar,
-
-                GREATEST(
-                    p.total_biaya - COALESCE(SUM(
-                        CASE
-                            WHEN b.status_transaksi = 'Berhasil'
-                            THEN b.total_bayar
-                            ELSE 0
-                        END
-                    ), 0),
-                    0
-                ) AS sisa_pembayaran,
-
-                p.status_pelunasan
-
-            FROM Pemesanan p
-            LEFT JOIN Pembayaran b
-                ON p.id_pemesanan = b.id_pemesanan
-
-            GROUP BY
-                p.id_pemesanan,
-                p.nama_pelanggan,
-                p.nama_kegiatan,
-                p.total_biaya,
-                p.status_pelunasan
-
-            ORDER BY p.id_pemesanan
-        """)
-
+        cursor.execute("SELECT * FROM v_ringkasan_pembayaran ORDER BY id_pemesanan")
         rows = cursor.fetchall()
-
         if not rows:
             print("BELUM ADA DATA PEMESANAN.")
             return
-
-        for r in rows:
-            print(
-                f"ID Pemesanan       : {r[0]}\n"
-                f"Nama Pelanggan     : {r[1]}\n"
-                f"Nama Kegiatan      : {r[2]}\n"
-                f"Total Biaya        : Rp {r[3]:,.0f}\n"
-                f"Total Terbayar     : Rp {r[4]:,.0f}\n"
-                f"Sisa Pembayaran    : Rp {r[5]:,.0f}\n"
-                f"Status Pelunasan   : {r[6]}"
-            )
+        for row in rows:
+            print(f"ID Pemesanan       : {row[0]}\nNama Pelanggan     : {row[1]}\nNama Kegiatan      : {row[2]}\nTotal Biaya        : Rp {row[3]:,.0f}\nTotal Terbayar     : Rp {row[4]:,.0f}\nSisa Pembayaran    : Rp {row[5]:,.0f}\nStatus Pelunasan   : {row[6]}")
             print("-" * 70)
-
     except Error as err:
         print(f"GAGAL MENAMPILKAN RINGKASAN: {err}")
-
     finally:
         cursor.close()
         conn.close()
@@ -701,15 +345,8 @@ def read_ringkasan_pembayaran():
 def menu_pembayaran():
     while True:
         print_title("MENU PEMBAYARAN")
-        print("1. Tambah Data")
-        print("2. Tampilkan Data")
-        print("3. Ubah Data")
-        print("4. Hapus Data")
-        print("5. Ringkasan Pembayaran")
-        print("0. Kembali ke Menu Utama")
-
-        pilihan = input("Pilih menu: ")
-
+        print("1. Tambah Data\n2. Tampilkan Data\n3. Ubah Data\n4. Hapus Data\n5. Ringkasan Pembayaran\n0. Kembali ke Menu Utama")
+        pilihan = input("Pilih menu: ").strip()
         if pilihan == "1":
             create_pembayaran()
         elif pilihan == "2":
@@ -724,104 +361,88 @@ def menu_pembayaran():
             break
         else:
             print("PILIHAN TIDAK VALID!")
+        pause()
 
-        input("\nTekan ENTER untuk kembali...")
 
-
-#HASIL DOKUMENTASI
 def create_dokumentasi():
     print_title("TAMBAH HASIL DOKUMENTASI")
-    data = (input_int("ID Dokumentasi     : "), input_int("ID Pemesanan       : "), input("Link File           : ").strip())
-    if not data[2]: print("Link file wajib diisi."); return
-    conn = get_connection()
-    if conn is None: return
-    cursor = conn.cursor()
-    try:
-        cursor.execute("INSERT INTO Hasil_Dokumentasi (id_dokumentasi,id_pemesanan,link_file) VALUES (%s,%s,%s)", data)
-        conn.commit(); print("\nDATA HASIL DOKUMENTASI BERHASIL DITAMBAHKAN!")
-    except Error as err: conn.rollback(); print(f"GAGAL MENAMBAHKAN DATA: {err}")
-    finally: cursor.close(); conn.close()
+    data = (input_int("ID Dokumentasi     : "), input_int("ID Pemesanan       : "), input_required("Link File          : "))
+    run_write("INSERT INTO Hasil_Dokumentasi (id_dokumentasi, id_pemesanan, link_file) VALUES (%s, %s, %s)", data, "\nDATA HASIL DOKUMENTASI BERHASIL DITAMBAHKAN!", "", "GAGAL MENAMBAHKAN DATA")
 
 
 def read_dokumentasi():
     print_title("DAFTAR HASIL DOKUMENTASI")
     conn = get_connection()
-    if conn is None: return
+    if conn is None:
+        return
     cursor = conn.cursor()
     try:
-        cursor.execute("""SELECT h.id_dokumentasi,h.id_pemesanan,p.nama_pelanggan,p.nama_kegiatan,h.link_file
-            FROM Hasil_Dokumentasi h JOIN Pemesanan p ON h.id_pemesanan=p.id_pemesanan
-            ORDER BY h.id_dokumentasi""")
+        cursor.execute("SELECT h.id_dokumentasi, h.id_pemesanan, p.nama_pelanggan, p.nama_kegiatan, h.link_file FROM Hasil_Dokumentasi h JOIN Pemesanan p ON h.id_pemesanan = p.id_pemesanan ORDER BY h.id_dokumentasi")
         rows = cursor.fetchall()
-        if not rows: print("BELUM ADA HASIL DOKUMENTASI."); return
-        for r in rows:
-            print(f"ID Dokumentasi  : {r[0]}\nID Pemesanan     : {r[1]}\nNama Pelanggan   : {r[2]}\nNama Kegiatan    : {r[3]}\nLink File        : {r[4]}")
+        if not rows:
+            print("BELUM ADA HASIL DOKUMENTASI.")
+            return
+        for row in rows:
+            print(f"ID Dokumentasi  : {row[0]}\nID Pemesanan    : {row[1]}\nNama Pelanggan  : {row[2]}\nNama Kegiatan   : {row[3]}\nLink File       : {row[4]}")
             print("-" * 70)
-    except Error as err: print(f"GAGAL MENAMPILKAN DATA: {err}")
-    finally: cursor.close(); conn.close()
+    except Error as err:
+        print(f"GAGAL MENAMPILKAN DATA: {err}")
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def update_dokumentasi():
     print_title("UBAH HASIL DOKUMENTASI")
-    id_d = input_int("ID Dokumentasi yang diubah : ")
-    data = (input_int("ID Pemesanan baru          : "), input("Link File baru             : ").strip(), id_d)
-    if not data[1]: print("Link file wajib diisi."); return
-    conn = get_connection()
-    if conn is None: return
-    cursor = conn.cursor()
-    try:
-        cursor.execute("UPDATE Hasil_Dokumentasi SET id_pemesanan=%s,link_file=%s WHERE id_dokumentasi=%s", data)
-        conn.commit(); print("\nDATA HASIL DOKUMENTASI BERHASIL DIUBAH!" if cursor.rowcount else "\nID DOKUMENTASI TIDAK DITEMUKAN.")
-    except Error as err: conn.rollback(); print(f"GAGAL MENGUBAH DATA: {err}")
-    finally: cursor.close(); conn.close()
+    id_dokumentasi = input_int("ID Dokumentasi yang diubah : ")
+    data = (input_int("ID Pemesanan baru          : "), input_required("Link File baru             : "), id_dokumentasi)
+    run_write("UPDATE Hasil_Dokumentasi SET id_pemesanan = %s, link_file = %s WHERE id_dokumentasi = %s", data, "\nDATA HASIL DOKUMENTASI BERHASIL DIUBAH!", "\nID DOKUMENTASI TIDAK DITEMUKAN.", "GAGAL MENGUBAH DATA")
 
 
 def delete_dokumentasi():
     print_title("HAPUS HASIL DOKUMENTASI")
-    id_d = input_int("ID Dokumentasi yang dihapus : ")
-    if not confirm_delete(): print("Penghapusan dibatalkan."); return
-    conn = get_connection()
-    if conn is None: return
-    cursor = conn.cursor()
-    try:
-        cursor.execute("DELETE FROM Hasil_Dokumentasi WHERE id_dokumentasi=%s", (id_d,)); conn.commit()
-        print("\nDATA HASIL DOKUMENTASI BERHASIL DIHAPUS!" if cursor.rowcount else "\nID DOKUMENTASI TIDAK DITEMUKAN.")
-    except Error as err: conn.rollback(); print(f"GAGAL MENGHAPUS DATA: {err}")
-    finally: cursor.close(); conn.close()
+    id_dokumentasi = input_int("ID Dokumentasi yang dihapus : ")
+    if confirm_delete():
+        run_write("DELETE FROM Hasil_Dokumentasi WHERE id_dokumentasi = %s", (id_dokumentasi,), "\nDATA HASIL DOKUMENTASI BERHASIL DIHAPUS!", "\nID DOKUMENTASI TIDAK DITEMUKAN.", "GAGAL MENGHAPUS DATA")
+    else:
+        print("Penghapusan dibatalkan.")
 
 
 def menu_dokumentasi():
+    menu_crud("MENU HASIL DOKUMENTASI", create_dokumentasi, read_dokumentasi, update_dokumentasi, delete_dokumentasi)
+
+
+def menu_crud(title, create, read, update, delete):
+    actions = {"1": create, "2": read, "3": update, "4": delete}
     while True:
-        print_title("MENU HASIL DOKUMENTASI")
+        print_title(title)
         print("1. Tambah Data\n2. Tampilkan Data\n3. Ubah Data\n4. Hapus Data\n0. Kembali ke Menu Utama")
         pilihan = input("Pilih menu: ").strip()
-        if pilihan == "1": create_dokumentasi(); pause()
-        elif pilihan == "2": read_dokumentasi(); pause()
-        elif pilihan == "3": update_dokumentasi(); pause()
-        elif pilihan == "4": delete_dokumentasi(); pause()
-        elif pilihan == "0": break
-        else: print("Pilihan tidak valid."); pause()
+        if pilihan == "0":
+            return
+        action = actions.get(pilihan)
+        if action is None:
+            print("Pilihan tidak valid.")
+        else:
+            action()
+        pause()
 
 
-#MENU UTAMA
 def main_menu():
+    actions = {"1": menu_tim, "2": menu_pemesanan, "3": menu_jadwal, "4": menu_pembayaran, "5": menu_dokumentasi}
     while True:
         print_title("SISTEM INFORMASI JASA DOKUMENTASI MULTIMEDIA")
-        print("1. Tim Multimedia")
-        print("2. Pemesanan")
-        print("3. Jadwal")
-        print("4. Pembayaran")
-        print("5. Hasil Dokumentasi")
-        print("0. Keluar")
-        print("-" * 70)
+        print("1. Tim Multimedia\n2. Pemesanan\n3. Jadwal\n4. Pembayaran\n5. Hasil Dokumentasi\n0. Keluar\n" + "-" * 70)
         pilihan = input("Pilih menu: ").strip()
-        if pilihan == "1": menu_tim()
-        elif pilihan == "2": menu_pemesanan()
-        elif pilihan == "3": menu_jadwal()
-        elif pilihan == "4": menu_pembayaran()
-        elif pilihan == "5": menu_dokumentasi()
-        elif pilihan == "0": print("\nTERIMA KASIH TELAH MENGGUNAKAN PROGRAM."); break
-        else: print("Pilihan tidak valid."); pause()
+        if pilihan == "0":
+            print("\nTERIMA KASIH TELAH MENGGUNAKAN PROGRAM.")
+            return
+        action = actions.get(pilihan)
+        if action is None:
+            print("Pilihan tidak valid.")
+            pause()
+        else:
+            action()
 
 
 if __name__ == "__main__":
