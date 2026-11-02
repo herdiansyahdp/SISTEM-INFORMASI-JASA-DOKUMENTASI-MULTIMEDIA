@@ -138,24 +138,39 @@ def menu_tim():
 def create_pemesanan():
     print_title("TAMBAH DATA PEMESANAN")
     data = (
-        input_int("ID Pemesanan        : "),
-        input("Nama Pelanggan      : ").strip(),
-        input("Nama Kegiatan       : ").strip(),
-        input("Lokasi Kegiatan     : ").strip(),
+        input_int("ID Pemesanan                   : "),
+        input("Nama Pelanggan                 : ").strip(),
+        input("Nama Kegiatan                  : ").strip(),
+        input("Lokasi Kegiatan                : ").strip(),
         input("Tanggal Pemesanan [YYYY-MM-DD] : ").strip(),
-        input("Waktu Kegiatan [HH:MM:SS]      : ").strip()
+        input("Waktu Kegiatan [HH:MM:SS]      : ").strip(),
+        input_int("Total Biaya (Rp)               : ")
     )
-    if not all(data[1:]): print("Semua field wajib diisi."); return
+    
+    if not all(data[1:6]): 
+        print("Semua field teks wajib diisi.")
+        return
+        
+    if data[6] <= 0:
+        print("Total Biaya tidak boleh negatif atau nol!")
+        return
+
     conn = get_connection()
     if conn is None: return
     cursor = conn.cursor()
     try:
+        
         cursor.execute("""INSERT INTO Pemesanan
-            (id_pemesanan,nama_pelanggan,nama_kegiatan,lokasi_kegiatan,tanggal_pemesanan,waktu_kegiatan)
-            VALUES (%s,%s,%s,%s,%s,%s)""", data)
-        conn.commit(); print("\nDATA PEMESANAN BERHASIL DITAMBAHKAN!")
-    except Error as err: conn.rollback(); print(f"GAGAL MENAMBAHKAN DATA: {err}")
-    finally: cursor.close(); conn.close()
+            (id_pemesanan, nama_pelanggan, nama_kegiatan, lokasi_kegiatan, tanggal_pemesanan, waktu_kegiatan, total_biaya)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)""", data)
+        conn.commit()
+        print("\nDATA PEMESANAN BERHASIL DITAMBAHKAN!")
+    except Error as err: 
+        conn.rollback()
+        print(f"GAGAL MENAMBAHKAN DATA: {err}")
+    finally: 
+        cursor.close()
+        conn.close()
 
 
 def read_pemesanan():
@@ -164,35 +179,73 @@ def read_pemesanan():
     if conn is None: return
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id_pemesanan,nama_pelanggan,nama_kegiatan,lokasi_kegiatan,tanggal_pemesanan,waktu_kegiatan FROM Pemesanan ORDER BY id_pemesanan")
+        # 1. Menambahkan total_biaya dan status_pelunasan di akhir query SELECT
+        cursor.execute("SELECT id_pemesanan, nama_pelanggan, nama_kegiatan, lokasi_kegiatan, tanggal_pemesanan, waktu_kegiatan, total_biaya, status_pelunasan FROM Pemesanan ORDER BY id_pemesanan")
         rows = cursor.fetchall()
-        if not rows: print("BELUM ADA DATA PEMESANAN."); return
+        
+        if not rows: 
+            print("BELUM ADA DATA PEMESANAN.")
+            return
+            
         for r in rows:
-            print(f"ID Pemesanan   : {r[0]}\nNama Pelanggan : {r[1]}\nNama Kegiatan  : {r[2]}\nLokasi         : {r[3]}\nTanggal Pesan  : {r[4]}\nWaktu Kegiatan : {r[5]}")
+            # 2. Menambahkan r[6] dengan format angka dan r[7] ke dalam print
+            print(f"ID Pemesanan     : {r[0]}\n"
+                  f"Nama Pelanggan   : {r[1]}\n"
+                  f"Nama Kegiatan    : {r[2]}\n"
+                  f"Lokasi           : {r[3]}\n"
+                  f"Tanggal Pesan    : {r[4]}\n"
+                  f"Waktu Kegiatan   : {r[5]}\n"
+                  f"Total Biaya      : {r[6]:,.0f}\n"
+                  f"Status Pelunasan : {r[7]}")
             print("-" * 70)
-    except Error as err: print(f"GAGAL MENAMPILKAN DATA: {err}")
-    finally: cursor.close(); conn.close()
+            
+    except Error as err: 
+        print(f"GAGAL MENAMPILKAN DATA: {err}")
+    finally: 
+        cursor.close()
+        conn.close()
 
 
 def update_pemesanan():
     print_title("UBAH DATA PEMESANAN")
-    id_p = input_int("ID Pemesanan yang diubah : ")
+    id_p = input_int("ID Pemesanan yang diubah       : ")
+    
     data = (
-        input("Nama Pelanggan baru      : ").strip(),
-        input("Nama Kegiatan baru       : ").strip(),
-        input("Lokasi Kegiatan baru     : ").strip(),
+        input("Nama Pelanggan baru            : ").strip(),
+        input("Nama Kegiatan baru             : ").strip(),
+        input("Lokasi Kegiatan baru           : ").strip(),
         input("Tanggal Pemesanan [YYYY-MM-DD] : ").strip(),
-        input("Waktu Kegiatan [HH:MM:SS]      : ").strip(), id_p)
-    if not all(data[:-1]): print("Semua field wajib diisi."); return
+        input("Waktu Kegiatan [HH:MM:SS]      : ").strip(),
+        input_int("Total Biaya baru (Rp)          : "), 
+        id_p 
+    )
+    
+    if not all(data[:5]): 
+        print("Semua field teks wajib diisi.")
+        return
+        
+    if data[5] <= 0:
+        print("Total Biaya harus lebih besar dari 0 (tidak boleh negatif atau nol).")
+        return
+
     conn = get_connection()
     if conn is None: return
     cursor = conn.cursor()
     try:
-        cursor.execute("""UPDATE Pemesanan SET nama_pelanggan=%s,nama_kegiatan=%s,lokasi_kegiatan=%s,
-            tanggal_pemesanan=%s,waktu_kegiatan=%s WHERE id_pemesanan=%s""", data)
-        conn.commit(); print("\nDATA PEMESANAN BERHASIL DIUBAH!" if cursor.rowcount else "\nID PEMESANAN TIDAK DITEMUKAN.")
-    except Error as err: conn.rollback(); print(f"GAGAL MENGUBAH DATA: {err}")
-    finally: cursor.close(); conn.close()
+
+        cursor.execute("""UPDATE Pemesanan 
+            SET nama_pelanggan=%s, nama_kegiatan=%s, lokasi_kegiatan=%s,
+                tanggal_pemesanan=%s, waktu_kegiatan=%s, total_biaya=%s 
+            WHERE id_pemesanan=%s""", data)
+        conn.commit()
+        
+        print("\nDATA PEMESANAN BERHASIL DIUBAH!" if cursor.rowcount else "\nID PEMESANAN TIDAK DITEMUKAN.")
+    except Error as err: 
+        conn.rollback()
+        print(f"GAGAL MENGUBAH DATA: {err}")
+    finally: 
+        cursor.close()
+        conn.close()
 
 
 def delete_pemesanan():
