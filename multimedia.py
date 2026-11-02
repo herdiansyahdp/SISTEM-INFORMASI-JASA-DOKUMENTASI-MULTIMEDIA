@@ -224,7 +224,7 @@ def update_pemesanan():
         print("Semua field teks wajib diisi.")
         return
         
-    if data[5] <= 0:
+    if data[5] < 0:
         print("Total Biaya harus lebih besar dari 0 (tidak boleh negatif atau nol).")
         return
 
@@ -356,25 +356,64 @@ def menu_jadwal():
         else: print("Pilihan tidak valid."); pause()
 
 
-#PEMBAYARAN
+# PEMBAYARAN
 def create_pembayaran():
     print_title("TAMBAH DATA PEMBAYARAN")
-    data = (
-        input_int("ID Pembayaran      : "),
-        input_int("ID Pemesanan       : "),
-        input("Tanggal Bayar [YYYY-MM-DD] (kosong = NULL): ").strip() or None,
-        input("Total Bayar         : ").strip(),
-        input("Status Bayar        : ").strip()
-    )
-    if not data[3] or not data[4]: print("Total bayar dan status bayar wajib diisi."); return
-    conn = get_connection()
-    if conn is None: return
-    cursor = conn.cursor()
+
+    # Input data pembayaran
     try:
-        cursor.execute("INSERT INTO Pembayaran (id_pembayaran,id_pemesanan,tanggal_bayar,total_bayar,status_bayar) VALUES (%s,%s,%s,%s,%s)", data)
-        conn.commit(); print("\nDATA PEMBAYARAN BERHASIL DITAMBAHKAN!")
-    except Error as err: conn.rollback(); print(f"GAGAL MENAMBAHKAN DATA: {err}")
-    finally: cursor.close(); conn.close()
+        data = (
+            input_int("ID Pembayaran      : "),
+            input_int("ID Pemesanan       : "),
+            input("Tanggal Bayar [YYYY-MM-DD] (kosong = NULL): ").strip() or None,
+            float(input("Total Bayar         : ").strip()),
+            input("Status Transaksi   : ").strip()
+        )
+    except ValueError:
+        print("ID harus berupa bilangan bulat dan total bayar harus berupa angka.")
+        return
+
+    # Validasi input
+    if data[0] <= 0 or data[1] <= 0:
+        print("ID Pembayaran dan ID Pemesanan harus lebih besar dari 0.")
+        return
+
+    if data[3] < 0:
+        print("Total bayar tidak boleh negatif.")
+        return
+
+    if not data[4]:
+        print("Status transaksi wajib diisi.")
+        return
+
+    if data[4] not in ("Berhasil", "Pending", "Gagal"):
+        print("Status transaksi harus Berhasil, Pending, atau Gagal.")
+        return
+
+    # Koneksi database
+    conn = get_connection()
+    if conn is None:
+        return
+
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT INTO Pembayaran
+            (id_pembayaran, id_pemesanan, tanggal_bayar, total_bayar, status_transaksi)
+            VALUES (%s, %s, %s, %s, %s)
+        """, data)
+
+        conn.commit()
+        print("\nDATA PEMBAYARAN BERHASIL DITAMBAHKAN!")
+
+    except Error as err:
+        conn.rollback()
+        print(f"GAGAL MENAMBAHKAN DATA: {err}")
+
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def read_pembayaran():
@@ -384,62 +423,309 @@ def read_pembayaran():
     cursor = conn.cursor()
     try:
         cursor.execute("""SELECT b.id_pembayaran,b.id_pemesanan,p.nama_pelanggan,p.nama_kegiatan,
-            b.tanggal_bayar,b.total_bayar,b.status_bayar FROM Pembayaran b
+            b.tanggal_bayar,b.total_bayar,b.status_transaksi FROM Pembayaran b
             JOIN Pemesanan p ON b.id_pemesanan=p.id_pemesanan ORDER BY b.id_pembayaran""")
         rows = cursor.fetchall()
         if not rows: print("BELUM ADA DATA PEMBAYARAN."); return
         for r in rows:
-            print(f"ID Pembayaran  : {r[0]}\nID Pemesanan   : {r[1]}\nNama Pelanggan : {r[2]}\nNama Kegiatan  : {r[3]}\nTanggal Bayar  : {r[4]}\nTotal Bayar    : Rp {r[5]:,.2f}\nStatus Bayar   : {r[6]}")
+            print(f"ID Pembayaran  : {r[0]}\nID Pemesanan   : {r[1]}\nNama Pelanggan : {r[2]}\nNama Kegiatan  : {r[3]}\nTanggal Bayar  : {r[4]}\nTotal Bayar    : Rp {r[5]:,.2f}\nStatus Transaksi : {r[6]}")
             print("-" * 70)
     except Error as err: print(f"GAGAL MENAMPILKAN DATA: {err}")
     finally: cursor.close(); conn.close()
 
 
+
 def update_pembayaran():
     print_title("UBAH DATA PEMBAYARAN")
+
     id_b = input_int("ID Pembayaran yang diubah : ")
-    data = (
-        input_int("ID Pemesanan baru        : "),
-        input("Tanggal Bayar [YYYY-MM-DD] (kosong = NULL): ").strip() or None,
-        input("Total Bayar baru         : ").strip(),
-        input("Status Bayar baru        : ").strip(), id_b
-    )
-    if not data[2] or not data[3]: print("Total bayar dan status bayar wajib diisi."); return
-    conn = get_connection()
-    if conn is None: return
-    cursor = conn.cursor()
+
     try:
-        cursor.execute("UPDATE Pembayaran SET id_pemesanan=%s,tanggal_bayar=%s,total_bayar=%s,status_bayar=%s WHERE id_pembayaran=%s", data)
-        conn.commit(); print("\nDATA PEMBAYARAN BERHASIL DIUBAH!" if cursor.rowcount else "\nID PEMBAYARAN TIDAK DITEMUKAN.")
-    except Error as err: conn.rollback(); print(f"GAGAL MENGUBAH DATA: {err}")
-    finally: cursor.close(); conn.close()
+        id_pemesanan = input_int("ID Pemesanan baru        : ")
+        tanggal_bayar = input("Tanggal Bayar [YYYY-MM-DD] (kosong = NULL): ").strip() or None
+        total_bayar = float(input("Total Bayar baru         : ").strip())
+        status_transaksi = input("Status Transaksi baru    : ").strip()
+
+        if id_b <= 0 or id_pemesanan <= 0:
+            print("ID harus lebih besar dari 0.")
+            return
+
+        if total_bayar < 0:
+            print("Total bayar tidak boleh negatif.")
+            return
+
+        if status_transaksi not in ("Berhasil", "Pending", "Gagal"):
+            print("Status transaksi harus Berhasil, Pending, atau Gagal.")
+            return
+
+    except ValueError:
+        print("Input ID harus berupa bilangan bulat dan total bayar harus berupa angka.")
+        return
+
+    conn = get_connection()
+    if conn is None:
+        return
+
+    cursor = conn.cursor()
+
+    try:
+        # Ambil ID pemesanan lama sebelum data pembayaran diubah
+        cursor.execute(
+            "SELECT id_pemesanan FROM Pembayaran WHERE id_pembayaran = %s",
+            (id_b,)
+        )
+        hasil = cursor.fetchone()
+
+        if hasil is None:
+            print("ID PEMBAYARAN TIDAK DITEMUKAN.")
+            return
+
+        id_pemesanan_lama = hasil[0]
+
+        # Update data pembayaran
+        cursor.execute("""
+            UPDATE Pembayaran
+            SET id_pemesanan = %s,
+                tanggal_bayar = %s,
+                total_bayar = %s,
+                status_transaksi = %s
+            WHERE id_pembayaran = %s
+        """, (
+            id_pemesanan,
+            tanggal_bayar,
+            total_bayar,
+            status_transaksi,
+            id_b
+        ))
+
+        # Hitung ulang status pelunasan pemesanan lama dan baru
+        for id_p in set((id_pemesanan_lama, id_pemesanan)):
+            cursor.execute("""
+                SELECT
+                    p.total_biaya,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN b.status_transaksi = 'Berhasil'
+                            THEN b.total_bayar
+                            ELSE 0
+                        END
+                    ), 0)
+                FROM Pemesanan p
+                LEFT JOIN Pembayaran b
+                    ON p.id_pemesanan = b.id_pemesanan
+                WHERE p.id_pemesanan = %s
+                GROUP BY p.id_pemesanan, p.total_biaya
+            """, (id_p,))
+
+            hasil_total = cursor.fetchone()
+
+            if hasil_total is not None:
+                total_biaya, total_terbayar = hasil_total
+                status = "Lunas" if total_terbayar >= total_biaya else "Belum Lunas"
+
+                cursor.execute("""
+                    UPDATE Pemesanan
+                    SET status_pelunasan = %s
+                    WHERE id_pemesanan = %s
+                """, (status, id_p))
+
+        conn.commit()
+        print("\nDATA PEMBAYARAN BERHASIL DIUBAH!")
+
+    except Error as err:
+        conn.rollback()
+        print(f"GAGAL MENGUBAH DATA: {err}")
+
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def delete_pembayaran():
     print_title("HAPUS DATA PEMBAYARAN")
+
     id_b = input_int("ID Pembayaran yang dihapus : ")
-    if not confirm_delete(): print("Penghapusan dibatalkan."); return
+
+    if not confirm_delete():
+        print("Penghapusan dibatalkan.")
+        return
+
     conn = get_connection()
-    if conn is None: return
+    if conn is None:
+        return
+
     cursor = conn.cursor()
+
     try:
-        cursor.execute("DELETE FROM Pembayaran WHERE id_pembayaran=%s", (id_b,)); conn.commit()
-        print("\nDATA PEMBAYARAN BERHASIL DIHAPUS!" if cursor.rowcount else "\nID PEMBAYARAN TIDAK DITEMUKAN.")
-    except Error as err: conn.rollback(); print(f"GAGAL MENGHAPUS DATA: {err}")
-    finally: cursor.close(); conn.close()
+        # Mengambil ID Pemesanan sebelum pembayaran dihapus
+        cursor.execute("""
+            SELECT id_pemesanan
+            FROM Pembayaran
+            WHERE id_pembayaran = %s
+        """, (id_b,))
+
+        result = cursor.fetchone()
+
+        if result is None:
+            print("\nID PEMBAYARAN TIDAK DITEMUKAN.")
+            return
+
+        id_pemesanan = result[0]
+
+        # Menghapus data pembayaran
+        cursor.execute("""
+            DELETE FROM Pembayaran
+            WHERE id_pembayaran = %s
+        """, (id_b,))
+
+        # Menghitung ulang total pembayaran yang berhasil
+        cursor.execute("""
+            SELECT COALESCE(SUM(total_bayar), 0)
+            FROM Pembayaran
+            WHERE id_pemesanan = %s
+              AND status_transaksi = 'Berhasil'
+        """, (id_pemesanan,))
+
+        total_terbayar = cursor.fetchone()[0]
+
+        # Mengambil total biaya pemesanan
+        cursor.execute("""
+            SELECT total_biaya
+            FROM Pemesanan
+            WHERE id_pemesanan = %s
+        """, (id_pemesanan,))
+
+        total_biaya = cursor.fetchone()[0]
+
+        # Memperbarui status pelunasan
+        status = "Lunas" if total_terbayar >= total_biaya else "Belum Lunas"
+
+        cursor.execute("""
+            UPDATE Pemesanan
+            SET status_pelunasan = %s
+            WHERE id_pemesanan = %s
+        """, (status, id_pemesanan))
+
+        conn.commit()
+
+        print("\nDATA PEMBAYARAN BERHASIL DIHAPUS!")
+        print(f"Status Pelunasan Pemesanan: {status}")
+
+    except Error as err:
+        conn.rollback()
+        print(f"GAGAL MENGHAPUS DATA: {err}")
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def read_ringkasan_pembayaran():
+    print_title("RINGKASAN PEMBAYARAN")
+
+    conn = get_connection()
+    if conn is None:
+        return
+
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT
+                p.id_pemesanan,
+                p.nama_pelanggan,
+                p.nama_kegiatan,
+                p.total_biaya,
+
+                COALESCE(SUM(
+                    CASE
+                        WHEN b.status_transaksi = 'Berhasil'
+                        THEN b.total_bayar
+                        ELSE 0
+                    END
+                ), 0) AS total_terbayar,
+
+                GREATEST(
+                    p.total_biaya - COALESCE(SUM(
+                        CASE
+                            WHEN b.status_transaksi = 'Berhasil'
+                            THEN b.total_bayar
+                            ELSE 0
+                        END
+                    ), 0),
+                    0
+                ) AS sisa_pembayaran,
+
+                p.status_pelunasan
+
+            FROM Pemesanan p
+            LEFT JOIN Pembayaran b
+                ON p.id_pemesanan = b.id_pemesanan
+
+            GROUP BY
+                p.id_pemesanan,
+                p.nama_pelanggan,
+                p.nama_kegiatan,
+                p.total_biaya,
+                p.status_pelunasan
+
+            ORDER BY p.id_pemesanan
+        """)
+
+        rows = cursor.fetchall()
+
+        if not rows:
+            print("BELUM ADA DATA PEMESANAN.")
+            return
+
+        for r in rows:
+            print(
+                f"ID Pemesanan       : {r[0]}\n"
+                f"Nama Pelanggan     : {r[1]}\n"
+                f"Nama Kegiatan      : {r[2]}\n"
+                f"Total Biaya        : Rp {r[3]:,.0f}\n"
+                f"Total Terbayar     : Rp {r[4]:,.0f}\n"
+                f"Sisa Pembayaran    : Rp {r[5]:,.0f}\n"
+                f"Status Pelunasan   : {r[6]}"
+            )
+            print("-" * 70)
+
+    except Error as err:
+        print(f"GAGAL MENAMPILKAN RINGKASAN: {err}")
+
+    finally:
+        cursor.close()
+        conn.close()
 
 
 def menu_pembayaran():
     while True:
         print_title("MENU PEMBAYARAN")
-        print("1. Tambah Data\n2. Tampilkan Data\n3. Ubah Data\n4. Hapus Data\n0. Kembali ke Menu Utama")
-        pilihan = input("Pilih menu: ").strip()
-        if pilihan == "1": create_pembayaran(); pause()
-        elif pilihan == "2": read_pembayaran(); pause()
-        elif pilihan == "3": update_pembayaran(); pause()
-        elif pilihan == "4": delete_pembayaran(); pause()
-        elif pilihan == "0": break
-        else: print("Pilihan tidak valid."); pause()
+        print("1. Tambah Data")
+        print("2. Tampilkan Data")
+        print("3. Ubah Data")
+        print("4. Hapus Data")
+        print("5. Ringkasan Pembayaran")
+        print("0. Kembali ke Menu Utama")
+
+        pilihan = input("Pilih menu: ")
+
+        if pilihan == "1":
+            create_pembayaran()
+        elif pilihan == "2":
+            read_pembayaran()
+        elif pilihan == "3":
+            update_pembayaran()
+        elif pilihan == "4":
+            delete_pembayaran()
+        elif pilihan == "5":
+            read_ringkasan_pembayaran()
+        elif pilihan == "0":
+            break
+        else:
+            print("PILIHAN TIDAK VALID!")
+
+        input("\nTekan ENTER untuk kembali...")
 
 
 #HASIL DOKUMENTASI
