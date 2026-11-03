@@ -169,7 +169,7 @@ def create_pemesanan():
     data = (
         input_int("ID Pemesanan                   : "), input_required("Nama Pelanggan                 : "),
         input_required("Nama Kegiatan                  : "), input_required("Lokasi Kegiatan                : "),
-        input_date("Tanggal Pemesanan [YYYY-MM-DD] : "), input_time("Waktu Kegiatan [HH:MM:SS]      : "),
+        input_date("Tanggal Kegiatan [YYYY-MM-DD] : "), input_time("Waktu Kegiatan [HH:MM:SS]      : "),
         input_money("Total Biaya (Rp)               : ", Decimal("0.01")),
     )
     run_write(
@@ -191,7 +191,7 @@ def read_pemesanan():
             print("BELUM ADA DATA PEMESANAN.")
             return
         for row in rows:
-            print(f"ID Pemesanan     : {row[0]}\nNama Pelanggan   : {row[1]}\nNama Kegiatan    : {row[2]}\nLokasi           : {row[3]}\nTanggal Pesan    : {row[4]}\nWaktu Kegiatan   : {row[5]}\nTotal Biaya      : Rp {row[6]:,.0f}\nStatus Pelunasan : {row[7]}")
+            print(f"ID Pemesanan     : {row[0]}\nNama Pelanggan   : {row[1]}\nNama Kegiatan    : {row[2]}\nLokasi           : {row[3]}\nTanggal Kegiatan : {row[4]}\nWaktu Kegiatan   : {row[5]}\nTotal Biaya      : Rp {row[6]:,.0f}\nStatus Pelunasan : {row[7]}")
             print("-" * 70)
     except Error as err:
         print(f"GAGAL MENAMPILKAN DATA: {err}")
@@ -205,7 +205,7 @@ def update_pemesanan():
     id_pemesanan = input_int("ID Pemesanan yang diubah       : ")
     data = (
         input_required("Nama Pelanggan baru            : "), input_required("Nama Kegiatan baru             : "),
-        input_required("Lokasi Kegiatan baru           : "), input_date("Tanggal Pemesanan [YYYY-MM-DD] : "),
+        input_required("Lokasi Kegiatan baru           : "), input_date("Tanggal Kegiatan [YYYY-MM-DD] : "),
         input_time("Waktu Kegiatan [HH:MM:SS]      : "), input_money("Total Biaya baru (Rp)          : ", Decimal("0.01")),
         id_pemesanan,
     )
@@ -446,4 +446,4 @@ def main_menu():
 
 
 if __name__ == "__main__":
-    main_menu()
+    main_menu()    
